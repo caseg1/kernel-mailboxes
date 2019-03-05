@@ -343,6 +343,17 @@
 332	common	statx			__x64_sys_statx
 333	common	io_pgetevents		__x64_sys_io_pgetevents
 334	common	rseq			__x64_sys_rseq
+335	common	create_mbox_421		__x64_sys_create_mbox_421
+336	common	remove_mbox_421		__x64_sys_remove_mbox_421
+337	common	mbox_add_acl_421	__x64_sys_mbox_add_acl_421
+338	common	mbox_del_acl_421	__x64_sys_mbox_del_acl_421
+339	common	count_mbox_421		__x64_sys_count_mbox_421
+340	common	list_mbox_421		__x64_sys_list_mbox_421
+341	common	send_msg_421		__x64_sys_send_msg_421
+342	common	recv_msg_421		__x64_sys_recv_msg_421
+343	common	peek_msg_421		__x64_sys_peek_msg_421
+344	common	count_msg_421		__x64_sys_count_msg_421
+345	common	len_msg_421		__x64_sys_len_msg_421
 
 #
 # x32-specific system call numbers start at 512 to avoid cache impact

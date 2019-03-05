@@ -1283,3 +1283,15 @@ static inline long ksys_truncate(const char __user *pathname, loff_t length)
 }
 
 #endif
+
+asmlinkage long sys_create_mbox_421(long);
+asmlinkage long sys_remove_mbox_421(long);
+asmlinkage long sys_mbox_add_acl_421(long);
+asmlinkage long sys_mbox_del_acl_421(long);
+asmlinkage long sys_count_mbox_421(long);
+asmlinkage long sys_list_mbox_421(long);
+asmlinkage long sys_send_msg_421(long);
+asmlinkage long sys_recv_msg_421(long);
+asmlinkage long sys_peek_msg_421(long);
+asmlinkage long sys_count_msg_421(long);
+asmlinkage long sys_len_msg_421(long);
