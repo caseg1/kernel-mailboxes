@@ -1,1 +1,1 @@
-proj1test README
+describing your approach to testing this project. Tell us what your testcases actually test, and why you chose to test those things. If your testcases are supposed to fail at any point, make sure to tell us that in the README (after all, you should not only test your code with good inputs, but with bad ones too — we'll do just that in our testcases). 
