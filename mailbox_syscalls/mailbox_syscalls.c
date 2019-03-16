@@ -1,22 +1,35 @@
 #include <stdlib.h>
 #include <linux/kernel.h>
 //#include <linux/syscalls.h>
+#include <stdint.h>
+//#include <linux/cred.h>
+#include <unistd.h>
+#include <errno.h>
 #include "list.h"
 
 
-typedef struct msg {
-  int id;
+typedef enum {false, true} bool;
+
+typedef struct msgNode {
+  unsigned char * msg;
   // This is used to link messages together in their list
   struct list_head list_node;
-} msg_t;
+} msgNode_t;
+
+typedef struct m_acl {
+  pid_t pid;
+  struct list_head list_node;
+} m_acl_t;
 
 typedef struct mbox {
   unsigned long id;
   int encrypt;
-  // This is used to link mboxs together in the mbox list
+  // This is used to link mbox together in the mboxes list
   struct list_head list_node;
   // This is used so each mbox can have their own list of msgs
   struct list_head msgs;
+  // This is used so each mbox can have their own acl
+  struct list_head acl;
 } mbox_t;
 
 LIST_HEAD(mboxes);
@@ -30,7 +43,12 @@ LIST_HEAD(mboxes);
 //SYSCALL_DEFINE0(create_mbox_421, unsigned long, id, int, enable_crypt) {
 int create_mbox(unsigned long id, int enable_crypt) {
   printf("create_mbox\n");
-  
+
+  //check if the user is root 
+  /*if (current_cred()->uid.val != 0) 
+    return -EPERM;
+  */
+
   struct list_head *pos;
 
   //check if ID exists
@@ -41,7 +59,7 @@ int create_mbox(unsigned long id, int enable_crypt) {
     if (p != NULL) {
       if (p->id == id) {
 	printf("mbox %d already exists\n", id);
-	return -1; //id already exists
+	return EEXIST; //id already exists
       }
     }
   }
@@ -63,7 +81,12 @@ int create_mbox(unsigned long id, int enable_crypt) {
 //SYSCALL_DEFINE1(remove_mbox_421, unsigned long, id) {}
 int remove_mbox(unsigned long id) {
   printf("remove_mbox\n");
-  
+
+  //check if the user is root 
+  /*if (current_cred()->uid.val != 0) 
+    return -EPERM;
+  */
+
   struct list_head* pos = NULL;
   struct list_head* tmp;
 
@@ -80,27 +103,112 @@ int remove_mbox(unsigned long id) {
       }
       else {
 	printf("mbox %d not empty", id);
-	return -1;
+	return EISDIR;
       }
     }
   }
   printf("mbox %d does not exist\n", id);
-  return -1;
+  return ENOENT;
 }
 
-/* adds the process with PID proc_id to the access control list for the mailbox with ID id and returns 0. If the process is already in the ACL for the specified mailbox, this system call shall return an appropriate error.
+/* adds the process with PID proc_id to the access control list
+   for the mailbox with ID id and returns 0. If the process is
+   already in the ACL for the specified mailbox, this system call
+   shall return an appropriate error.
  */
 //SYSCALL_DEFINE2(mbox_add_acl_421, unsigned long, id, int, proc_id) {}
+int mbox_add_acl_421(unsigned long id, int proc_id) {
 
-/* removes the process with PID proc_id from the access control list for the mailbox with ID id and returns 0. If the process is not in the ACL for the specified mailbox, this system call shall return an appropriate error.
+  //check if the user is root 
+  /*if (current_cred()->uid.val != 0) 
+    return -EPERM;
+
+  //get process ID
+  current->pid;
+  */
+
+  struct list_head *pos;
+  list_for_each(pos, &mboxes) { //loop mailboxes
+    mbox_t* m = NULL;
+    m = list_entry(pos, mbox_t, list_node);
+
+    //search for mailbox id
+    if (m->id == id) {
+
+      //loop ACL
+      m_acl_t* the_pid;
+      list_for_each_entry(the_pid, &m->acl, list_node) {
+
+	if (the_pid->pid == proc_id) { //error if ACL entry exists
+	  printf("PID %i already exists in ACL\n", proc_id);
+	  return EEXIST;
+	}
+      }
+      //add ACL entry
+      m_acl_t* p = (m_acl_t*)malloc(sizeof(m_acl_t));
+      p->pid = proc_id;
+      list_add_tail(&p->list_node, &m->acl);
+      return 0;
+    }
+  }  
+  printf("Couldn't find mailbox with %i ID\n", id);
+  return ENOENT;
+}
+
+/* removes the process with PID proc_id from the access control
+   list for the mailbox with ID id and returns 0. If the process
+   is not in the ACL for the specified mailbox, this system call
+   shall return an appropriate error.
  */
 //SYSCALL_DEFINE3(mbox_del_acl_421, unsigned long, id, int, proc_id) {}
+int mbox_del_acl_421(unsigned long id, int proc_id) {
+
+  //check if the user is root 
+  /*if (current_cred()->uid.val != 0) 
+    return -EPERM;
+
+  //get process ID
+  current->pid;
+  */  
+
+  struct list_head *pos;
+  list_for_each(pos, &mboxes) { //loop mailboxes
+    mbox_t* m = NULL;
+    m = list_entry(pos, mbox_t, list_node);
+
+    //search for mailbox id
+    if (m->id == id) {
+
+      //loop ACL
+      m_acl_t* the_pid;
+      list_for_each_entry(the_pid, &m->acl, list_node) {
+
+	if (the_pid->pid == proc_id) { //found PID, delete
+	  list_del(&the_pid->list_node);
+	  free(the_pid);
+	  //kfree(the_pid);
+	  printf("PID %i deleted from ACL\n", proc_id);
+	  return 0;
+	}
+      }
+      //couldn't find ACL entry
+      printf("PID %i not in ACL\n", proc_id);
+      return ESRCH;
+    }
+  }  
+  printf("Couldn't find mailbox with %i ID\n", id);
+  return ENOENT;  
+}
 
 /* returns the number of existing mailboxes.
  */
 //SYSCALL_DEFINE4(count_mbox_421, void) {
 unsigned int count_mbox(void) {
   printf("count_mbox\n");
+
+  //check if the user is root 
+  /*if (current_cred()->uid.val == 0) 
+   for true, skip ACL check*/
   
   struct list_head *pos;
   unsigned int count = 0;
@@ -124,6 +232,14 @@ unsigned int count_mbox(void) {
 //SYSCALL_DEFINE5(list_mbox_421, unsigned long __user *, mbxes, long, k) {
 int list_mbox(unsigned long * mbxes, long k) {
   printf("list_mbox\n");
+
+  //check if the user is root 
+  /*if (current_cred()->uid.val == 0) 
+   for true, skip ACL check*/
+
+  //check if passed in pointer is valid
+  if (mbxes == NULL)
+    return EFAULT;
   
   struct list_head *pos;
   int count = 0; //num of successfully written IDs
@@ -139,23 +255,92 @@ int list_mbox(unsigned long * mbxes, long k) {
   }
   return count;
 }
-/* encrypts the message msg (if appropriate), adding it to the already existing mailbox identified. Returns the number of bytes stored (which shall be equal to the message length n) on success, and an appropriate error code on failure. Messages with negative lengths shall be rejected as invalid and cause an appropriate error to be returned, however messages with a length of zero shall be accepted as valid.
+/* encrypts the message msg (if appropriate), adding it to the
+   already existing mailbox identified. Returns the number of bytes
+   stored (which shall be equal to the message length n) on success,
+   and an appropriate error code on failure. Messages with negative
+   lengths shall be rejected as invalid and cause an appropriate error
+   to be returned, however messages with a length of zero shall be
+   accepted as valid.
  */
 //SYSCALL_DEFINE6(send_msg_421, unsigned long, id, unsigned char __user *, msg, long, n, uint32_t __user *, key) {}
+long send_msg_421(unsigned long id, unsigned char * msg, long n, uint32_t * key) {
 
-/* copies up to n characters from the next message in the mailbox id to the user-space buffer msg, decrypting with the specified key (if appropriate), and removes the entire message from the mailbox (even if only part of the message is copied out). Returns the number of bytes successfully copied (which shall be the minimum of the length of the message that is stored and n) on success or an appropriate error code on failure. 
+  if (msg == NULL) //check passed in pointer
+    return EFAULT;
+  if (n < 0) //check msg length n for negative
+    return EIO;
+  
+  struct list_head *pos;
+  list_for_each(pos, &mboxes) { //loop mailboxes
+    mbox_t* m = NULL;
+    m = list_entry(pos, mbox_t, list_node);
+
+    //search for mailbox id
+    if (m->id == id) {
+
+      //not root, check ACL
+      //if (current_cred()->uid.val != 0) {
+      if (1) {
+	m_acl_t* the_pid;
+	list_for_each_entry(the_pid, &m->acl, list_node) { //loop ACL
+	  //if (the_pid->pid == current->pid) { //found PID in ACL
+	  if (1) {
+	    goto addMail; //sorry
+	  }
+	}
+	//printf("PID %i not in ACL\n", current->pid);
+	return EPERM;
+      }
+      
+    addMail:
+      //encrypts if != 0
+      if (m->encrypt != 0) {}
+
+      //add to mailbox
+      msgNode_t * s = (msgNode_t*)malloc(sizeof(msgNode_t));
+      s->msg = msg;
+      list_add_tail(&s->list_node, &m->msgs);
+      return n;
+      //return number of bytes stored (equal to n) on success
+      //error code on failure
+    }
+  }
+  printf("Couldn't find mailbox with %i ID\n", id);
+  return ENOENT;  
+}
+
+/* copies up to n characters from the next message in the mailbox id
+   to the user-space buffer msg, decrypting with the specified key
+   (if appropriate), and removes the entire message from the mailbox
+   (even if only part of the message is copied out). Returns the number
+   of bytes successfully copied (which shall be the minimum of the length
+   of the message that is stored and n) on success or an appropriate error
+   code on failure. 
  */
 //SYSCALL_DEFINE7(recv_msg_421, unsigned long, id, unsigned char __user *, msg, long, n, uint32_t __user *, key) {}
+long recv_msg_421(unsigned long id, unsigned char * msg, long n, uint32_t * key) {
+  //check if the user is root 
+  /*if (current_cred()->uid.val == 0) 
+    for true, skip ACL check
+  */
+}
 
-/* performs the same operation as recv_msg_421() without removing the message from the mailbox.
+/* performs the same operation as recv_msg_421() without
+   removing the message from the mailbox.
  */
 //SYSCALL_DEFINE8(peek_msg_421, unsigned long, id, unsigned char __user *, msg, long, n, uint32_t __user *, key) {}
 
-/* returns the number of messages in the mailbox id on success or an appropriate error code on failure.
+/* returns the number of messages in the mailbox id on
+   success or an appropriate error code on failure.
  */
 //SYSCALL_DEFINE9(count_msg_421, unsigned long, id) {
 
-/* returns the length of the next message that would be returned by calling recv_msg_421() with the same id value (that is the number of bytes in the next message in the mailbox). If there are no messages in the mailbox, this shall return an appropriate error value.
+/* returns the length of the next message that would be returned
+   by calling recv_msg_421() with the same id value (that is the
+   number of bytes in the next message in the mailbox). If there
+   are no messages in the mailbox, this shall return an appropriate
+   error value.
  */
 //SYSCALL_DEFINE10(len_msg_421, unsigned long, id) {}
 
