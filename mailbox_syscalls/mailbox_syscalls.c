@@ -12,23 +12,22 @@ typedef enum {false, true} bool;
 
 typedef struct msgNode {
   unsigned char * msg;
-  // This is used to link messages together in their list
   struct list_head list_node;
 } msgNode_t;
 
-typedef struct m_acl {
+typedef struct aclNode {
   pid_t pid;
   struct list_head list_node;
-} m_acl_t;
+} aclNode_t;
 
 typedef struct mbox {
   unsigned long id;
   int encrypt;
-  // This is used to link mbox together in the mboxes list
+  // link mbox together in the mboxes list
   struct list_head list_node;
-  // This is used so each mbox can have their own list of msgs
+  // Each mbox can have their own list of msgs
   struct list_head msgs;
-  // This is used so each mbox can have their own acl
+  // Each mbox can have their own acl
   struct list_head acl;
 } mbox_t;
 
@@ -45,10 +44,11 @@ int create_mbox(unsigned long id, int enable_crypt) {
   printf("create_mbox\n");
 
   //check if the user is root 
-  /*if (current_cred()->uid.val != 0) 
+  //if (current_cred()->uid.val != 0) 
+  /*if (getpid() != 0)
     return -EPERM;
   */
-
+  
   struct list_head *pos;
 
   //check if ID exists
@@ -58,7 +58,7 @@ int create_mbox(unsigned long id, int enable_crypt) {
 
     if (p != NULL) {
       if (p->id == id) {
-	printf("mbox %d already exists\n", id);
+	printf("mbox %lu already exists\n", id);
 	return EEXIST; //id already exists
       }
     }
@@ -66,12 +66,12 @@ int create_mbox(unsigned long id, int enable_crypt) {
 
   //create new mailbox
   mbox_t* new_mbox = (mbox_t*)malloc(sizeof(mbox_t));
+  INIT_LIST_HEAD(&new_mbox->msgs);
+  INIT_LIST_HEAD(&new_mbox->acl);
   new_mbox->id = id;
-  new_mbox->encrypt = enable_crypt;
+  new_mbox->encrypt = enable_crypt;  
   list_add_tail(&new_mbox->list_node, &mboxes);
-
-  printf("Created mbox %d\n", new_mbox->id);
-  
+  printf("Created mbox %lu\n", new_mbox->id);  
   return 0;
 }
 /* removes mailbox with ID id, if it is empty, and returns 0.
@@ -83,31 +83,50 @@ int remove_mbox(unsigned long id) {
   printf("remove_mbox\n");
 
   //check if the user is root 
-  /*if (current_cred()->uid.val != 0) 
+  //if (current_cred()->uid.val != 0) 
+  /*if (getpid() != 0)
     return -EPERM;
   */
-
+  
   struct list_head* pos = NULL;
   struct list_head* tmp;
 
   list_for_each_safe(pos, tmp, &mboxes) {
-    mbox_t* p = list_entry(pos, mbox_t, list_node);
-
-    if (p->id == id) {
-      if (!list_empty(&p->msgs)) { //check if empty
-	printf("Deleted mbox %d\n", p->id);
+    mbox_t* m = list_entry(pos, mbox_t, list_node);
+    
+    if (m->id == id) { //found mbox
+      // CAUSES MEM ERRORS; NOT INIT UNTIL FIRST SND_MSG/ADD_ACL
+      if (list_empty(&m->msgs)) { //true if empty
+	printf("empty msgs\n");
+	
+	if (!list_empty(&m->acl)) { //true if ACL not empty
+	  printf("non-empty acl\n");
+	  //delete ACL
+	  aclNode_t* the_pid;
+	  aclNode_t* temp_pid;
+	  
+	  list_for_each_entry_safe(the_pid, temp_pid, &m->acl, list_node) {
+	    printf("pid %i removed\n",the_pid->pid);
+	    list_del(&the_pid->list_node);
+	    //kfree(the_pid);
+	    free(the_pid);
+	  }
+	  printf("Deleted ACL for mbox %lu\n", m->id);
+	}
+	
+	printf("Deleted mbox %lu\n", m->id);
 	list_del(pos);
 	//kfree(p);
-	free(p);
+	free(m);
 	return 0;
       }
       else {
-	printf("mbox %d not empty", id);
+	printf("mbox %lu not empty\n", id);
 	return EISDIR;
       }
     }
   }
-  printf("mbox %d does not exist\n", id);
+  printf("mbox %lu does not exist\n", id);
   return ENOENT;
 }
 
@@ -117,16 +136,15 @@ int remove_mbox(unsigned long id) {
    shall return an appropriate error.
  */
 //SYSCALL_DEFINE2(mbox_add_acl_421, unsigned long, id, int, proc_id) {}
-int mbox_add_acl_421(unsigned long id, int proc_id) {
-
+int mbox_add_acl(unsigned long id, int proc_id) {
+  printf("mbox_add_acl\n");
+  
   //check if the user is root 
-  /*if (current_cred()->uid.val != 0) 
+  //if (current_cred()->uid.val != 0) 
+  /*if (getpid() != 0)
     return -EPERM;
-
-  //get process ID
-  current->pid;
   */
-
+  
   struct list_head *pos;
   list_for_each(pos, &mboxes) { //loop mailboxes
     mbox_t* m = NULL;
@@ -135,23 +153,26 @@ int mbox_add_acl_421(unsigned long id, int proc_id) {
     //search for mailbox id
     if (m->id == id) {
 
-      //loop ACL
-      m_acl_t* the_pid;
-      list_for_each_entry(the_pid, &m->acl, list_node) {
-
-	if (the_pid->pid == proc_id) { //error if ACL entry exists
-	  printf("PID %i already exists in ACL\n", proc_id);
-	  return EEXIST;
+      if (list_empty(&m->acl)) { //check if ACL empty
+	
+	aclNode_t* the_pid;
+	list_for_each_entry(the_pid, &m->acl, list_node) {
+	
+	  if (the_pid->pid == proc_id) { //error if ACL entry exists
+	    printf("PID %i already exists in ACL\n", proc_id);
+	    return EEXIST;
+	  }
 	}
       }
       //add ACL entry
-      m_acl_t* p = (m_acl_t*)malloc(sizeof(m_acl_t));
+      aclNode_t* p = (aclNode_t*)malloc(sizeof(aclNode_t));
       p->pid = proc_id;
       list_add_tail(&p->list_node, &m->acl);
+      printf("Added PID %i to ACL of mbox %lu\n", proc_id, m->id);
       return 0;
     }
   }  
-  printf("Couldn't find mailbox with %i ID\n", id);
+  printf("Couldn't find mailbox with %lu ID\n", id);
   return ENOENT;
 }
 
@@ -161,16 +182,15 @@ int mbox_add_acl_421(unsigned long id, int proc_id) {
    shall return an appropriate error.
  */
 //SYSCALL_DEFINE3(mbox_del_acl_421, unsigned long, id, int, proc_id) {}
-int mbox_del_acl_421(unsigned long id, int proc_id) {
-
+int mbox_del_acl(unsigned long id, int proc_id) {
+  printf("mbox_del_acl\n");
+  
   //check if the user is root 
-  /*if (current_cred()->uid.val != 0) 
+  //if (current_cred()->uid.val != 0) 
+  /*if (getpid() != 0)
     return -EPERM;
-
-  //get process ID
-  current->pid;
-  */  
-
+  */
+  
   struct list_head *pos;
   list_for_each(pos, &mboxes) { //loop mailboxes
     mbox_t* m = NULL;
@@ -180,14 +200,14 @@ int mbox_del_acl_421(unsigned long id, int proc_id) {
     if (m->id == id) {
 
       //loop ACL
-      m_acl_t* the_pid;
+      aclNode_t* the_pid;
       list_for_each_entry(the_pid, &m->acl, list_node) {
 
 	if (the_pid->pid == proc_id) { //found PID, delete
+	  printf("Deleted PID %i to ACL of mbox %lu\n", proc_id, m->id);
 	  list_del(&the_pid->list_node);
 	  free(the_pid);
 	  //kfree(the_pid);
-	  printf("PID %i deleted from ACL\n", proc_id);
 	  return 0;
 	}
       }
@@ -196,7 +216,7 @@ int mbox_del_acl_421(unsigned long id, int proc_id) {
       return ESRCH;
     }
   }  
-  printf("Couldn't find mailbox with %i ID\n", id);
+  printf("Couldn't find mailbox with %lu ID\n", id);
   return ENOENT;  
 }
 
@@ -217,9 +237,8 @@ unsigned int count_mbox(void) {
     mbox_t* p = NULL;
     p = list_entry(pos, mbox_t, list_node);
 
-    if (p != NULL) {
+    if (p != NULL)
       count++;
-    }
   }
   return count;
 }
@@ -248,7 +267,7 @@ int list_mbox(unsigned long * mbxes, long k) {
     mbox_t* p = NULL;
     p = list_entry(pos, mbox_t, list_node);
     if (p != NULL && count < k) {
-      printf("Mailbox %d\n", p->id);
+      printf("Mailbox %lu\n", p->id);
       mbxes[count] = p->id;
       count++;
     }
@@ -264,7 +283,7 @@ int list_mbox(unsigned long * mbxes, long k) {
    accepted as valid.
  */
 //SYSCALL_DEFINE6(send_msg_421, unsigned long, id, unsigned char __user *, msg, long, n, uint32_t __user *, key) {}
-long send_msg_421(unsigned long id, unsigned char * msg, long n, uint32_t * key) {
+long send_msg(unsigned long id, unsigned char * msg, long n, uint32_t * key) {
 
   if (msg == NULL) //check passed in pointer
     return EFAULT;
@@ -281,11 +300,11 @@ long send_msg_421(unsigned long id, unsigned char * msg, long n, uint32_t * key)
 
       //not root, check ACL
       //if (current_cred()->uid.val != 0) {
-      if (1) {
-	m_acl_t* the_pid;
+      if (getpid() != 0) {
+	aclNode_t* the_pid;
 	list_for_each_entry(the_pid, &m->acl, list_node) { //loop ACL
 	  //if (the_pid->pid == current->pid) { //found PID in ACL
-	  if (1) {
+	  if (the_pid->pid == getpid()) {
 	    goto addMail; //sorry
 	  }
 	}
@@ -297,6 +316,10 @@ long send_msg_421(unsigned long id, unsigned char * msg, long n, uint32_t * key)
       //encrypts if != 0
       if (m->encrypt != 0) {}
 
+      //initialize empty msg list
+      if (!list_empty(&m->msgs))  //check if ACL empty
+	INIT_LIST_HEAD(&m->msgs);
+	
       //add to mailbox
       msgNode_t * s = (msgNode_t*)malloc(sizeof(msgNode_t));
       s->msg = msg;
@@ -306,7 +329,7 @@ long send_msg_421(unsigned long id, unsigned char * msg, long n, uint32_t * key)
       //error code on failure
     }
   }
-  printf("Couldn't find mailbox with %i ID\n", id);
+  printf("Couldn't find mailbox with %lu ID\n", id);
   return ENOENT;  
 }
 
@@ -319,22 +342,96 @@ long send_msg_421(unsigned long id, unsigned char * msg, long n, uint32_t * key)
    code on failure. 
  */
 //SYSCALL_DEFINE7(recv_msg_421, unsigned long, id, unsigned char __user *, msg, long, n, uint32_t __user *, key) {}
-long recv_msg_421(unsigned long id, unsigned char * msg, long n, uint32_t * key) {
+int recv_msg(unsigned long id, unsigned char * msg, long n, uint32_t * key) {
+  printf("recv_msg");
   //check if the user is root 
   /*if (current_cred()->uid.val == 0) 
     for true, skip ACL check
   */
+  
+  //loop mboxes
+  struct list_head *pos;
+  list_for_each(pos, &mboxes) { //find mbox id
+    mbox_t* m = NULL;
+    m = list_entry(pos, mbox_t, list_node);    
+
+    if (m->id == id) { // find first message  
+      if (!list_empty(&m->msgs)) { //check if empty
+	printf("No msg in ID %lu\n", id);
+	return ENOENT; //return error if no messages
+      }
+      //find first msg
+      //copy n bytes from head to user * msg
+      //decrypt if necessary
+      //remove message from mbox
+      //return min(n, len(msg @ id))
+    }
+  }
+  printf("mbox %lu does not exist\n", id);
+  return ENOENT;
 }
 
 /* performs the same operation as recv_msg_421() without
    removing the message from the mailbox.
  */
 //SYSCALL_DEFINE8(peek_msg_421, unsigned long, id, unsigned char __user *, msg, long, n, uint32_t __user *, key) {}
+int peek_msg(unsigned long id, unsigned char * msg, long n, uint32_t * key) {
+  printf("peek_msg");
+
+  //check if the user is root 
+  /*if (current_cred()->uid.val == 0) 
+    for true, skip ACL check
+  */
+  
+  //loop mboxes
+  struct list_head *pos;
+  list_for_each(pos, &mboxes) { //find mbox id
+    mbox_t* m = NULL;
+    m = list_entry(pos, mbox_t, list_node);    
+
+    if (m->id == id) { // find first message  
+      if (!list_empty(&m->msgs)) { //check if empty
+	printf("No msg in ID %lu\n", id);
+	return ENOENT; //return error if no messages
+      }
+      //find first msg
+      //copy n bytes from head to user * msg
+      //decrypt if necessary
+      //return min(n, len(msg @ id))
+    }
+  }
+  printf("mbox %lu does not exist\n", id);
+  return ENOENT;
+}
 
 /* returns the number of messages in the mailbox id on
    success or an appropriate error code on failure.
  */
-//SYSCALL_DEFINE9(count_msg_421, unsigned long, id) {
+//SYSCALL_DEFINE9(count_msg_421, unsigned long, id) {}
+unsigned int count_msg(unsigned long id) {
+  printf("count_msg\n");
+  
+  unsigned int count = 0;
+  
+  //loop mboxes
+  struct list_head *pos;
+  list_for_each(pos, &mboxes) {
+    mbox_t* m = NULL;
+    m = list_entry(pos, mbox_t, list_node);    
+
+    if (m->id == id) {    
+      
+      //loop msgs
+      msgNode_t* the_msg;
+      list_for_each_entry(the_msg, &m->msgs, list_node) {
+	count++;
+      }
+      return count;
+    }
+  }
+  printf("mbox %lu does not exist\n", id);
+  return ENOENT;
+}
 
 /* returns the length of the next message that would be returned
    by calling recv_msg_421() with the same id value (that is the
@@ -343,29 +440,56 @@ long recv_msg_421(unsigned long id, unsigned char * msg, long n, uint32_t * key)
    error value.
  */
 //SYSCALL_DEFINE10(len_msg_421, unsigned long, id) {}
+int len_msg(unsigned long id) {
+  printf("len_msg");
+  
+  //loop mboxes
+  struct list_head *pos;
+  list_for_each(pos, &mboxes) { //find mbox id
+    mbox_t* m = NULL;
+    m = list_entry(pos, mbox_t, list_node);    
+
+    if (m->id == id) { // find first message  
+      if (!list_empty(&m->msgs)) { //check if empty
+	printf("No msg in ID %lu\n", id);
+	return ENOENT; //return error if no messages
+      }
+      //find first msg
+      //return bytes
+    }
+  }
+  printf("mbox %lu does not exist\n", id);
+  return ENOENT;
+}
 
 
-int main() {
+int main(void) {
 
   long k = 3;
   unsigned long a[k];
   unsigned long* mbxes = a;
 
-  
   create_mbox(66,44);
-  create_mbox(66,22);
+  mbox_add_acl(66,5);
+  mbox_add_acl(66,2);
+  remove_mbox(66);
+  /*create_mbox(66,22);
   printf("num of mboxes: %u\n", count_mbox());
   create_mbox(24,22);
   create_mbox(324,22);
   create_mbox(676,22);
   create_mbox(21,22);
+  mbox_del_acl(66,5);
   printf("num of mboxes: %u\n", count_mbox());
   list_mbox(mbxes, k);
-  //SYSCALL_DEFINE6()
   remove_mbox(66);
   remove_mbox(24);
   remove_mbox(22);
   printf("num of mboxes: %u\n", count_mbox());
-  
+  remove_mbox(324);
+  remove_mbox(676);
+  remove_mbox(324);
+  remove_mbox(21);
+  */  
   return 0;
 }
