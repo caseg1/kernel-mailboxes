@@ -1,4 +1,12 @@
-describes anything you might want us to know when we're grading your assignment. This can include an outline of how you implemented the requirements of the project, for instance. This is also where you should cite any references you have used for the assignment other than those given in this assignment description.
+Approach:
+Started with learning how to use list.h functions.
+Added list_first_entry() to my version of list.h.
+Implemented calls in C. Never attempted to convert code to kernel syntax.
+No encryption or locking.
+However, I think the system calls are decently implemented with no
+   memory leaks from what I tested.
+User pointers passed into calls were not validated.
+
 
 Help:
 https://gist.github.com/shihyu/5ae66a0fc7b37ba70ef8364b482351d7#file-list-h-L5

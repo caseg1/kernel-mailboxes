@@ -1,1 +1,15 @@
-describing your approach to testing this project. Tell us what your testcases actually test, and why you chose to test those things. If your testcases are supposed to fail at any point, make sure to tell us that in the README (after all, you should not only test your code with good inputs, but with bad ones too — we'll do just that in our testcases). 
+README for proj1 test files
+
+Test1: tests create/remove and count mboxes
+Test2: tests list mbox
+Test3: tests acl add/del
+Test4: tests send/receive msg as well as peek and len
+
+The individual files are commented and print expected output and when
+errors are supposed to occur.
+
+Make with: make
+Run with:  make run1
+    ...    make run2
+    ...    make run3
+    ...	   make run4
